@@ -132,3 +132,4 @@ Las reservas viven únicamente en memoria. No se escriben archivos ni se usa
 una base de datos; por ello toda alta realizada se pierde al reiniciar el
 proceso y se reconstruye la semilla original. No se incorporaron funcionalidades
 fuera del alcance de esta refactorización.
+# NODO_tp7_salas_mongodb
