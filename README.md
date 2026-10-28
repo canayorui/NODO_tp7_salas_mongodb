@@ -1,135 +1,168 @@
-# Trabajo práctico 06
+# Trabajo práctico 07: persistencia inicial de reservas de salas
 
-## Proyecto de partida y cambios
+## Punto de partida y alcance
 
-El proyecto parte de la aplicación individual del TP05 ubicada en `NODO_tp5`.
-Se conservaron las vistas EJS, el layout, el CSS, los cuatro datos iniciales,
-las rutas, los campos y reglas de validación, Morgan, el ID `BIB-` y el registro
-de duración al evento `finish`. La refactorización separa el arranque, la
-configuración, la app, el router, el controlador, el servicio y los middleware.
-No se agregaron base de datos ni persistencia.
+Esta copia, `tp-07-salas-mongodb`, parte de la aplicación individual del TP06.
+Se conserva el sitio Express y su gestión de reservas en memoria. El laboratorio
+de MongoDB se ejecuta desde programas independientes de terminal: el sitio web
+todavía no lee ni escribe en MongoDB. La integración con los controladores HTTP
+queda para la unidad 8.
 
-Antes de refactorizar, se inspeccionó y ejecutó el TP05 original. La aplicación
-de partida respondió 200 en inicio, estado, listado, formulario, detalle
-existente y CSS; respondió 404 en detalle inexistente y URL desconocida. El
-estado comenzó con cuatro reservas. El POST vacío, con sala no permitida, con
-email sin `@` y con cero personas respondió 400; el POST válido respondió 302
-a `/reservas` y la cantidad pasó a cinco. Durante la primera revisión de TP06
-se detectó que `src/middleware/solicitudes.js` estaba vacío y `npm start`
-fallaba al registrar ese middleware. Se restauró desde el comportamiento del
-TP05 antes de ejecutar la matriz posterior.
+La configuración HTTP se encuentra en `src/config/entorno.js`. La URI se lee
+desde `MONGODB_URI`, pero no es necesaria para arrancar el sitio en memoria.
 
-## Instalación y ejecución
+## Requisitos e instalación
 
-Requiere Node.js 18.18 o superior y npm. Desde la carpeta del proyecto:
+Se utiliza CommonJS, Node.js 20.19 o superior (requisito de Mongoose 9) y npm.
+La práctica debe usar MongoDB Atlas Free (M0), no una base local. Desde la raíz,
+en una descarga nueva:
 
 ```bash
 npm install
+```
+
+En Atlas:
+
+1. Crear o seleccionar un clúster del nivel gratuito M0.
+2. Crear un usuario de base de datos con permisos de lectura y escritura.
+3. En Network Access, permitir la IP desde la que se ejecutarán los scripts.
+4. En Connect → Drivers, seleccionar Node.js y copiar la URI ofrecida por Atlas.
+5. Copiar `.env.example` como `.env` y reemplazar los marcadores de
+   `MONGODB_URI` por la URI privada. Conservar sus opciones y usar la base
+   `reservas_salas_u7`.
+
+No versionar `.env`, credenciales ni datos personales. `.env.example` contiene
+solo marcadores; `node_modules/` también está excluido de Git.
+
+## Configuración, conexión y comandos
+
+`src/config/base-datos.js` configura Node.js para resolver DNS con
+`8.8.8.8` y `1.1.1.1` antes de conectar. Esto solo afecta la resolución DNS de
+Node.js; no modifica el sistema operativo, la autenticación ni la lista de IP
+permitidas en Atlas. Si la red bloquea esos resolutores o el docente indica
+otros, acordar el ajuste y documentarlo antes de probar. No publicar la URI ni
+mensajes de error que puedan contener secretos.
+
+La conexión también comprueba que la URI seleccione explícitamente la base
+`reservas_salas_u7`; evita que una URI sin nombre de base escriba por accidente
+en la base predeterminada de MongoDB.
+
+Ejecutar desde la raíz:
+
+```bash
+node --env-file=.env scripts/comprobar-conexion.js
+node --env-file=.env scripts/crear-reserva.js
+node --env-file=.env scripts/listar-reservas.js
+```
+
+La prueba de conexión espera a que Mongoose conecte, no crea documentos y cierra
+la conexión. Ante un fallo muestra el tipo de error y, si existen, el código y
+la operación DNS, y termina con estado distinto de cero. Cada ejecución de
+creación inserta un documento nuevo; dos ejecuciones pueden crear reservas con
+los mismos campos y `_id` diferentes. La confirmación se imprime solo después
+de que MongoDB confirma la escritura. El listado consulta documentos persistidos
+con Mongoose; una colección vacía se informa con cantidad cero.
+
+El sitio web se inicia independientemente:
+
+```bash
 npm start
 ```
 
-Por defecto, el servidor escucha en <http://localhost:3000>. Para ejecutar las
-comprobaciones estáticas, se ejecuta `npm run format` y luego `npm run check`.
-
-## Configuración del entorno
-
-`src/configuracion.js` lee `PORT` y `NODE_ENV` al iniciar. Si no se define
-`PORT`, usa `3000`; si se define, debe ser un entero entre 1 y 65535. Morgan
-usa el formato `dev` por defecto y `combined` cuando `NODE_ENV=production`;
-esto solo cambia el formato del registro. `.env.example` muestra valores de
-ejemplo no secretos. No se versiona `.env`; `npm start` no requiere ese archivo.
-
-## Mapa de módulos y dependencias
-
-| Módulo | Responsabilidad |
-| --- | --- |
-| `src/index.js` | Conserva la semilla, crea la única instancia del servicio, lee configuración, crea la app y llama a `listen`. |
-| `src/configuracion.js` | Valida el puerto y selecciona entorno y formato de Morgan. |
-| `src/app.js` | Configura Express y EJS, arma el pipeline, recibe el servicio compartido, monta rutas y responde el 404 final. |
-| `src/router/reservas.js` | Declara caminos relativos al montaje `/reservas` y encadena middleware y controladores. |
-| `src/controllers/reservas.js` | Interpreta parámetros y datos ya validados y decide qué vista, estado o redirección enviar. |
-| `src/services/reservas.js` | Lista, busca, cuenta y crea reservas en memoria, sin conocer HTTP, Express ni EJS. |
-| `src/middleware/solicitudes.js` | Asigna el identificador `BIB-` y mide hasta que termina la respuesta. |
-| `src/middleware/reservas.js` | Añade el nombre de sección y valida los datos del formulario. |
-
-El servicio no usa `res` porque su responsabilidad es gestionar datos; las
-respuestas HTTP y el renderizado pertenecen al controlador. El controlador
-recibe el servicio, usa sus operaciones y traduce el resultado a vistas,
-estados o redirecciones. El router declara caminos relativos (`/`, `/nueva`,
-`/:id`) porque Express lo monta en `/reservas`. El único arreglo de reservas
-se crea en el servicio a partir de la semilla del arranque, y el mismo servicio
-se comparte con listado, detalle, `/estado` y creación. Al reiniciar Node, las
-nuevas reservas desaparecen y solo quedan los cuatro datos iniciales.
-
-## Pipeline y contrato de rutas
-
-El orden se conserva: Morgan → identificador → medición → layouts → static →
-`urlencoded` → JSON → rutas principales y router `/reservas` → 404 final.
-Morgan precede al middleware de solicitud; registra también recursos estáticos
-que respondan desde `public/`. La identificación y la medición corren antes de
-static, de modo que las solicitudes de CSS también reciben ID y medición.
-La duración se imprime al evento `finish`, junto con método, URL, estado y
-milisegundos.
-
-| Método y camino | Resultado |
-| --- | --- |
-| `GET /` | 200, inicio |
-| `GET /estado` | 200, JSON con estado, cantidad e ID de solicitud |
-| `GET /reservas` | 200, listado |
-| `GET /reservas/nueva` | 200, formulario |
-| `GET /reservas/:id` | 200 si existe; 404 HTML si no |
-| `POST /reservas` | 302 al listado si es válido; 400 si es inválido |
-| `GET /css/estilos.css` | 200, CSS estático |
-| Otra URL | 404 HTML |
-
-`/nueva` está declarada antes de `/:id`. `express.urlencoded` precede al
-middleware validador. La validación mantiene los campos estudiante, email,
-sala, fecha, turno y personas; exige email con `@`, sala y turno permitidos,
-fecha real con formato `AAAA-MM-DD` y entre 1 y 6 personas enteras. Si los
-datos son inválidos, responde 400 sin llamar a `next()`; si son válidos,
-prepara `req.reservaValidada` y continúa al controlador.
-
-## Matriz antes/después
-
-La evidencia “antes” se obtuvo ejecutando el TP05 original y probando sus rutas
-y formularios antes de editar TP06. La matriz posterior se verificó ejecutando
-los mismos casos sobre TP06; Morgan y el middleware propio se revisaron en la
-salida del proceso.
-
-| Caso | Antes (TP05) | Después (TP06) |
-| --- | --- | --- |
-| Inicio, CSS, estado, listado, formulario y detalle existente | 200; estado inicial con 4 reservas. | 200 en todos; cuatro reservas con datos originales; ID `BIB-` visible en páginas y JSON. |
-| Detalle inexistente y URL desconocida | 404 HTML. | 404 HTML en ambos casos, sin caída del servidor. |
-| POST vacío, sala inválida, email sin `@`, personas 0, 7 o decimal | 400 en cada caso probado (vacío, sala, email y 0). | 400 con mensaje de validación; `/estado` permaneció en 4 tras cada intento. |
-| POST válido y seguimiento | 302 a `/reservas`; `/estado` pasó de 4 a 5. | 302 a `/reservas`, el GET siguiente respondió 200, el listado mostró la reserva y `/estado` pasó de 4 a 5. |
-| Puerto alternativo e inválido | TP05 usaba el puerto fijo 3000. | Con `PORT=3217`, `/estado` respondió 200; con `PORT=abc`, el proceso no inició y mostró error explícito. También se rechazaron 0, 65536 y 3.5. |
-| Reinicio | No comprobado en la sesión de línea de base. | Tras reiniciar en 3000, `/estado` respondió 200 con cantidad 4 e ID `BIB-0001`. |
-
-Morgan y el middleware de duración registraron respuestas 200 (páginas, CSS y
-estado), 302 (POST válido), 400 (POST inválidos) y 404 (detalle inexistente y
-ruta desconocida), junto con ID, método, URL y duración.
-
-## Formato y análisis estático
-
-Dependencias de desarrollo: Prettier, ESLint y `@eslint/js`. ESLint aplica la
-configuración recomendada a los archivos CommonJS de `src/`.
+No necesita `MONGODB_URI`. Los controles de calidad son:
 
 ```bash
 npm run format
 npm run check
 ```
 
-`check` ejecuta `format:check` y `lint`. Resultados de los comandos de entrega:
+`format` aplica Prettier a `src/` y `scripts/`. `check` verifica formato y
+ejecuta ESLint en ambas carpetas.
 
-- `npm install`: finalizó correctamente; 0 vulnerabilidades informadas.
-- `npm run format`: finalizó correctamente sobre `src/`.
-- `npm run check`: pasaron Prettier y ESLint.
-- `npm start`: inició en el puerto predeterminado 3000 y respondió a la matriz.
+## Archivos, esquema y modelo
 
-## Persistencia temporal y límites
+| Archivo | Responsabilidad |
+| --- | --- |
+| `src/config/entorno.js` | Lee y valida `PORT`, determina el entorno y expone la URI privada de MongoDB. |
+| `src/config/base-datos.js` | Configura DNS, valida la URI y administra la conexión/desconexión de Mongoose. |
+| `src/modelos/reserva.js` | Define el modelo `Reserva` y la colección explícita `reservas`. |
+| `scripts/comprobar-conexion.js` | Comprueba la conexión sin escrituras. |
+| `scripts/crear-reserva.js` | Crea una reserva ficticia y muestra el `_id` confirmado. |
+| `scripts/listar-reservas.js` | Lee e imprime las reservas persistidas y su cantidad. |
+| `src/index.js`, `src/app.js`, `src/router/`, `src/controllers/`, `src/services/`, `src/middleware/` | Sitio Express preexistente del TP06; continúa usando memoria. |
 
-Las reservas viven únicamente en memoria. No se escriben archivos ni se usa
-una base de datos; por ello toda alta realizada se pierde al reiniciar el
-proceso y se reconstruye la semilla original. No se incorporaron funcionalidades
-fuera del alcance de esta refactorización.
-# NODO_tp7_salas_mongodb
+El modelo usa `_id` ObjectId generado por MongoDB, convertido a texto al
+mostrarlo. Asignar un `_id` a un objeto en memoria no demuestra que el documento
+se haya escrito: la confirmación se muestra después de esperar `create()`.
+
+| Campo | Tipo y reglas |
+| --- | --- |
+| `estudiante` | String obligatorio; trim. |
+| `email` | String obligatorio; trim y presencia de `@`. |
+| `sala` | String obligatorio; `Sala Norte`, `Sala Sur` o `Sala Multimedia`. |
+| `fecha` | String obligatorio y no vacío tras trim. |
+| `turno` | String obligatorio; `Mañana`, `Tarde` o `Noche`. |
+| `personas` | Number obligatorio, entero entre 1 y 6. |
+
+El alcance no valida emails completos, fechas imposibles o futuras,
+solapamientos, cupos compartidos ni reservas repetidas. No hay índice único.
+
+## Ensayo y matriz de persistencia
+
+No se debe inventar evidencia ni borrar documentos para obtener una colección
+vacía. Registrar cantidades y resultados observados con la URI válida de Atlas,
+desde la misma base individual:
+
+1. Ejecutar el listado y anotar la cantidad inicial.
+2. Crear una reserva; guardar el `_id` mostrado.
+3. Esperar a que termine el proceso y ejecutar el listado en un proceso nuevo.
+4. Confirmar el mismo `_id` y que la cantidad aumentó en uno.
+5. Repetir el listado sin otras escrituras y confirmar que la cantidad no cambió.
+6. En Atlas Data Explorer, capturar la base `reservas_salas_u7`, la colección
+   `reservas` y el documento con ese mismo `_id`. Recortar la captura para no
+   mostrar credenciales ni datos personales.
+
+Completar la siguiente tabla con resultados reales antes de entregar:
+
+| Caso | Resultado observado / cantidad antes y después |
+| --- | --- |
+| Conexión Atlas válida | Observado: "Conexión con MongoDB establecida correctamente." y el proceso terminó. |
+| Fallo DNS (si ocurrió), código, operación y solución acordada | Un intento inicial falló con `MongooseServerSelectionError` sin causa visible; se amplió el diagnóstico y la conexión posterior fue correcta. |
+| `MONGODB_URI` ausente | Observado: ejecutando sin `--env-file`, "Falló la conexión con MongoDB", código `MONGODB_URI_MISSING`, sin mensaje de éxito y código de salida 1. Nota: en PowerShell, `$env:MONGODB_URI=''` elimina la variable y `--env-file` volvía a cargarla desde `.env`. |
+| Contraseña incorrecta | Observado antes de corregir el `.env`: `MongoServerError`, código 8000 (autenticación fallida), sin mensaje de éxito. Se restauró la URI válida y la conexión posterior fue correcta. |
+| Colección vacía (base nueva `reservas_salas_u7`) | Observado: listado inicial con "Cantidad de reservas: 0", sin error. |
+| Reserva válida y `_id` | Observado: "Reserva guardada. _id: 6ae146567c22afa8d679932a"; cantidad 0 → 1. |
+| Consulta desde proceso nuevo | Observado: el listado recuperó el mismo `_id` 6ae146567c22afa8d679932a; cantidad 1. |
+| Segunda consulta | Observado: el listado repitió el mismo `_id` y la cantidad siguió en 1 (sin otras escrituras). |
+| Estudiante vacío, email sin `@`, sala/turno inválidos y fecha vacía | Observado en Atlas, un campo por vez con un script temporal (luego eliminado): `ValidationError` en `estudiante`, `email`, `sala`, `turno` y `fecha`; cantidad 1 antes y 1 después en cada caso. |
+| Personas `0`, `7`, `2.5` y texto no numérico (`"abc"`) | Observado en Atlas: `ValidationError` en `personas` en los cuatro casos (el texto no numérico falla en la conversión); cantidad 1 antes y 1 después. |
+| Captura de Data Explorer con el mismo `_id` | Pendiente de captura. |
+
+Para probar validaciones, cambiar temporalmente un solo campo de
+`reservaDePrueba` en `scripts/crear-reserva.js`, ejecutar la creación, anotar el
+resultado/cantidad y restaurar el ejemplo válido. Los errores no deben producir
+un mensaje de éxito.
+
+## Continuidad del sitio
+
+Las altas HTTP siguen siendo en memoria y no aparecen necesariamente en Atlas;
+las reservas creadas con los programas de terminal no aparecen todavía en las
+vistas. La migración del servicio HTTP y el uso de operaciones asíncronas quedan
+fuera de este TP y se abordarán en la unidad 8.
+
+Comprobación del sitio con el servidor en marcha (arrancado con `src/index.js`, el mismo punto de entrada de `npm start`): inicio, `/estado`, listado y formulario respondieron 200; el formulario inválido respondió 400 y la cantidad en memoria siguió en 4; el formulario válido redirigió a `/reservas` y la cantidad pasó de 4 a 5; el CSS respondió 200 y una URL desconocida, 404. Las reservas de Atlas no aparecen en las vistas.
+
+## Calidad
+
+`npm run format` y `npm run check` (Prettier y ESLint sobre `src/` y `scripts/`) finalizaron sin errores.
+
+## Versiones usadas
+
+- Node.js 22.17.1
+- npm 10.9.2
+- Mongoose 9.11.4
+- MongoDB Atlas Free (M0), clúster preparado en las clases.
+
+## Seguridad
+
+No se publican `.env`, credenciales ni datos personales: `.env` y `node_modules/` están en `.gitignore`, `.env.example` contiene solo marcadores y los datos de las reservas son ficticios.
