@@ -17,7 +17,12 @@ function leerConfiguracion() {
   const entorno = process.env.NODE_ENV || "development";
   const formatoMorgan = entorno === "production" ? "combined" : "dev";
 
-  return { port, entorno, formatoMorgan };
+  return {
+    port,
+    entorno,
+    formatoMorgan,
+    mongodbUri: process.env.MONGODB_URI,
+  };
 }
 
 module.exports = leerConfiguracion;
